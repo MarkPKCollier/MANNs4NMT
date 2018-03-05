@@ -40,8 +40,16 @@ def add_arguments(parser):
   """Build ArgumentParser."""
   parser.register("type", "bool", lambda v: v.lower() == "true")
 
+  # MANN + Curriculum
+  parser.add_argument("--model", type=str, default="none", help="none | model1 | model2 | model3")
+  parser.add_argument("--mann", type=str, default="ntm", help="ntm | dnc")
+  parser.add_argument("--read_heads", type=int, default=1, help="Number of read heads in external memory unit")
+  parser.add_argument("--write_heads", type=int, default=1, help="Number of write heads in external memory unit")
+  parser.add_argument("--num_memory_locations", type=int, default=128, help="Number of memory locations in external memory unit")
+  parser.add_argument("--memory_unit_size", type=int, default=20, help="Units per memory location in external memory unit")
+  parser.add_argument("--curriculum", type=str, default="none", help="none | predictive_gain")
+
   # network
-  parser.add_argument("--use_ntm", type=bool, default=False)
   parser.add_argument("--num_units", type=int, default=32, help="Network size.")
   parser.add_argument("--num_proj", type=int, default=None, help="Output projection.")
   parser.add_argument("--embedding_size", type=int, default=None, help="Size of encoding/decoding embedding.")
@@ -245,8 +253,16 @@ def create_hparams(flags):
       vocab_prefix=flags.vocab_prefix,
       out_dir=flags.out_dir,
 
+      # MANN + Curriculum
+      model=flags.model,
+      mann=flags.mann,
+      read_heads=flags.read_heads,
+      write_heads=flags.write_heads,
+      num_memory_locations=flags.num_memory_locations,
+      memory_unit_size=flags.memory_unit_size,
+      curriculum=flags.curriculum,
+
       # Networks
-      use_ntm=flags.use_ntm,
       num_units=flags.num_units,
       num_proj=flags.num_proj,
       embedding_size=flags.embedding_size,

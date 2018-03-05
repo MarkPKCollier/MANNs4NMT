@@ -1,5 +1,3 @@
-mcolliertfnmt3@gmail.com
-
 rm -rf /tmp/ref_model_en_vi_sgd_uni && mkdir /tmp/ref_model_en_vi_sgd_uni
 python -m nmt.nmt \
     --src=vi --tgt=en \
@@ -22,30 +20,14 @@ python -m nmt.nmt \
     --start_decay_step=20000 \
     --beam_width=10 \
     --share_vocab=False \
-    --use_ntm=True \
     --src_max_len=50 \
-    --src_max_len_infer=50
-
-python -m nmt.nmt \
-    --src=vi --tgt=en \
-    --out_dir=/tmp/ref_model_en_vi_sgd_uni \
-    --vocab_prefix=/Users/markcollier/Desktop/iwslt/vocab \
-    --train_prefix=/Users/markcollier/Desktop/iwslt/train \
-    --dev_prefix=/Users/markcollier/Desktop/iwslt/tst2012 \
-    --test_prefix=/Users/markcollier/Desktop/iwslt/tst2013 \
-    --num_train_steps=12000 \
-    --steps_per_stats=100 \
-    --num_layers=2 \
-    --num_units=512 \
-    --dropout=0.2 \
-    --metrics=bleu \
-    --optimizer=adam \
-    --learning_rate=0.001 \
-    --encoder_type=uni \
-    --decay_factor=0.5 \
-    --start_decay_step=8000 \
-    --beam_width=10 \
-    --share_vocab=False
+    --src_max_len_infer=50 \
+    --model=model2 \
+    --mann=ntm \
+    --read_heads=1 \
+    --write_heads=1 \
+    --num_memory_locations=64 \
+    --memory_unit_size=512
 
 gcloud ml-engine jobs submit training ntm_bi_enc_fixed_seq_len_beam_10_content_mix_context_vec_dropout_0_3_luong_style_2_read_heads_adam_2_512_3 \
     --module-name=nmt.nmt \

@@ -23,7 +23,7 @@ import tensorflow as tf
 # from . import model_helper
 import model
 import model_helper
-from ntm_cell import NTMCell
+from ntm import NTMCell
 
 __all__ = ["AttentionModel"]
 
@@ -77,16 +77,10 @@ class AttentionModel(model.Model):
 
     dtype = tf.float32
 
-    print ("memory size -1")
-    print (encoder_outputs)
-
     if self.time_major:
       memory = tf.transpose(encoder_outputs, [1, 0, 2])
     else:
       memory = encoder_outputs
-
-    print ("memory size 0")
-    print (memory)
 
     if self.mode == tf.contrib.learn.ModeKeys.INFER and beam_width > 0:
       memory = tf.contrib.seq2seq.tile_batch(
@@ -99,43 +93,33 @@ class AttentionModel(model.Model):
     else:
       batch_size = self.batch_size
 
-    if hparams.use_ntm:
-      print ("memory size 1")
-      print (memory)
-
-      memory = tf.contrib.layers.fully_connected(memory, num_units,
+    if hparams.model in ('model1', 'model2'):
+      att_memory = tf.contrib.layers.fully_connected(memory, num_units,
         activation_fn=None,
         weights_initializer=tf.random_uniform_initializer(-0.1, 0.1))
 
-      print ("memory size 1.1")
-      print (memory)
-      # memory = tf.concat([memory, tf.zeros_like(hparams.src_max_len - source_sequence_length, dtype=tf.float32)], axis=1)
-
-      cell = NTMCell(memory, num_units, batch_size, num_units,
-        num_layers, hparams.src_max_len, read_head_num=2, output_dim=num_units,
-        controller_dropout=hparams.dropout, controller_forget_bias=hparams.forget_bias,
-        mode=self.mode, beam_width=beam_width)
+      cell = NTMCell(num_layers,
+        num_units,
+        use_att_memory=True,
+        att_memory=att_memory,
+        att_memory_size=hparams.src_max_len,
+        att_memory_vector_dim=num_units,
+        use_ext_memory=(hparams.model == 'model2'),
+        ext_memory_size=hparams.num_memory_locations if hparams.model == 'model2' else None,
+        ext_memory_vector_dim=hparams.memory_unit_size if hparams.model == 'model2' else None,
+        ext_read_head_num=hparams.read_heads if hparams.model == 'model2' else None,
+        ext_write_head_num=hparams.write_heads if hparams.model == 'model2' else None,
+        dropout=hparams.dropout,
+        batch_size=batch_size,
+        mode=self.mode,
+        output_dim=num_units)
       
       decoder_initial_state = cell.zero_state(batch_size, dtype)
-      if hparams.pass_hidden_state:
-        # decoder_initial_state['controller_state'] = cell.controller.zero_state(batch_size, dtype).clone(
-        #     cell_state=encoder_state)
-        
-        # encoder_state = tuple(
-        #   map(lambda state_tuple: tf.contrib.rnn.LSTMStateTuple(
-        #     c=tf.concat([state_tuple.c, tf.zeros_like(state_tuple.c)], axis=1),
-        #     h=tf.concat([state_tuple.h, tf.zeros_like(state_tuple.c)], axis=1)),
-        #   list(encoder_state)))
-        
-        decoder_initial_state = tuple([encoder_state] + list(decoder_initial_state[1:]))
-        
-        # if len(decoder_initial_state) >= 5: # TODO: change to if use_embedding_inp
-        #   decoder_initial_state = (encoder_state, decoder_initial_state[1], decoder_initial_state[2], decoder_initial_state[3], decoder_initial_state[4])
-        # else:
-        #   decoder_initial_state = (encoder_state, decoder_initial_state[1], decoder_initial_state[2], decoder_initial_state[3])
-        print ("decoder initial state")
-        print (decoder_initial_state)
+      # print ("self.iterator.source_sequence_length", self.iterator.source_sequence_length)
+      # decoder_initial_state = cell.zero_state(self.iterator.source_sequence_length, dtype)
 
+      if hparams.pass_hidden_state:
+        decoder_initial_state = tuple([encoder_state] + list(decoder_initial_state[1:]))
     else:
       attention_mechanism = create_attention_mechanism(
           attention_option, num_units, memory, source_sequence_length)
