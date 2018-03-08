@@ -93,7 +93,7 @@ class AttentionModel(model.Model):
     else:
       batch_size = self.batch_size
 
-    if hparams.model in ('model1', 'model2'):
+    if hparams.model in ('model0', 'model1', 'model2'):
       att_memory = tf.contrib.layers.fully_connected(memory, num_units,
         activation_fn=None,
         weights_initializer=tf.random_uniform_initializer(-0.1, 0.1))
@@ -112,11 +112,10 @@ class AttentionModel(model.Model):
         dropout=hparams.dropout,
         batch_size=batch_size,
         mode=self.mode,
-        output_dim=num_units)
+        output_dim=num_units,
+        addressing_mode='content' if hparams.model == 'model0' else 'content_and_location')
       
       decoder_initial_state = cell.zero_state(batch_size, dtype)
-      # print ("self.iterator.source_sequence_length", self.iterator.source_sequence_length)
-      # decoder_initial_state = cell.zero_state(self.iterator.source_sequence_length, dtype)
 
       if hparams.pass_hidden_state:
         decoder_initial_state = tuple([encoder_state] + list(decoder_initial_state[1:]))

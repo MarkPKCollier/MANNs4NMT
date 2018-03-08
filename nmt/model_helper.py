@@ -49,7 +49,9 @@ def get_device_str(device_id, num_gpus):
 
 class TrainModel(
     collections.namedtuple("TrainModel", ("graph", "model", "iterator",
-                                          "skip_count_placeholder"))):
+                                          "skip_count_placeholder",
+                                          "curriculum_point_a_placeholder",
+                                          "curriculum_point_b_placeholder"))):
   pass
 
 
@@ -71,6 +73,8 @@ def create_train_model(
     src_dataset = tf.contrib.data.TextLineDataset(src_file)
     tgt_dataset = tf.contrib.data.TextLineDataset(tgt_file)
     skip_count_placeholder = tf.placeholder(shape=(), dtype=tf.int64)
+    curriculum_point_a_placeholder = tf.placeholder(shape=(), dtype=tf.int32, name='curriculum_point_a_placeholder')
+    curriculum_point_b_placeholder = tf.placeholder(shape=(), dtype=tf.int32, name='curriculum_point_b_placeholder')
 
     iterator = iterator_utils.get_iterator(
         src_dataset,
@@ -85,7 +89,10 @@ def create_train_model(
         num_buckets=hparams.num_buckets,
         src_max_len=hparams.src_max_len,
         tgt_max_len=hparams.tgt_max_len,
-        skip_count=skip_count_placeholder)
+        skip_count=skip_count_placeholder,
+        use_curriculum=hparams.curriculum != 'none',
+        curriculum_point_a=curriculum_point_a_placeholder,
+        curriculum_point_b=curriculum_point_b_placeholder)
 
     # Note: One can set model_device_fn to
     # `tf.train.replica_device_setter(ps_tasks)` for distributed training.
@@ -103,7 +110,9 @@ def create_train_model(
       graph=graph,
       model=model,
       iterator=iterator,
-      skip_count_placeholder=skip_count_placeholder)
+      skip_count_placeholder=skip_count_placeholder,
+      curriculum_point_a_placeholder=curriculum_point_a_placeholder,
+      curriculum_point_b_placeholder=curriculum_point_b_placeholder)
 
 
 class EvalModel(

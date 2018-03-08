@@ -41,13 +41,14 @@ def add_arguments(parser):
   parser.register("type", "bool", lambda v: v.lower() == "true")
 
   # MANN + Curriculum
-  parser.add_argument("--model", type=str, default="none", help="none | model1 | model2 | model3")
+  parser.add_argument("--model", type=str, default="none", help="none | model0 | model1 | model2 | model3")
   parser.add_argument("--mann", type=str, default="ntm", help="ntm | dnc")
   parser.add_argument("--read_heads", type=int, default=1, help="Number of read heads in external memory unit")
   parser.add_argument("--write_heads", type=int, default=1, help="Number of write heads in external memory unit")
-  parser.add_argument("--num_memory_locations", type=int, default=128, help="Number of memory locations in external memory unit")
-  parser.add_argument("--memory_unit_size", type=int, default=20, help="Units per memory location in external memory unit")
+  parser.add_argument("--num_memory_locations", type=int, default=64, help="Number of memory locations in external memory unit")
+  parser.add_argument("--memory_unit_size", type=int, default=100, help="Units per memory location in external memory unit")
   parser.add_argument("--curriculum", type=str, default="none", help="none | predictive_gain")
+  parser.add_argument("--num_curriculum_buckets", type=int, default=10, help="Number of lessons in the curriculum")
 
   # network
   parser.add_argument("--num_units", type=int, default=32, help="Network size.")
@@ -261,6 +262,7 @@ def create_hparams(flags):
       num_memory_locations=flags.num_memory_locations,
       memory_unit_size=flags.memory_unit_size,
       curriculum=flags.curriculum,
+      num_curriculum_buckets=flags.num_curriculum_buckets,
 
       # Networks
       num_units=flags.num_units,

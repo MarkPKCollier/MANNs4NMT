@@ -91,7 +91,10 @@ def get_iterator(src_dataset,
                  tgt_max_len=None,
                  num_threads=4,
                  output_buffer_size=None,
-                 skip_count=None):
+                 skip_count=None,
+                 use_curriculum=False,
+                 curriculum_point_a=None,
+                 curriculum_point_b=None):
   if not output_buffer_size: output_buffer_size = batch_size * 1000
   src_eos_id = tf.cast(
       src_vocab_table.lookup(tf.constant(eos)),
@@ -136,6 +139,11 @@ def get_iterator(src_dataset,
         lambda src, tgt: (tf.reverse(src, axis=[0]), tgt),
         num_threads=num_threads,
         output_buffer_size=output_buffer_size)
+
+  if use_curriculum:
+    src_tgt_dataset = src_tgt_dataset.filter(
+      lambda src, tgt: tf.logical_and(tf.size(src) >= curriculum_point_a, tf.size(src) < curriculum_point_b))
+
   # Convert the word strings to ids.  Word strings that are not in the
   # vocab get the lookup table's default_value integer.
   src_tgt_dataset = src_tgt_dataset.map(

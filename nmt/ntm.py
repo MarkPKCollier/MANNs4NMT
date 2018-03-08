@@ -89,14 +89,15 @@ class NTMCell(tf.contrib.rnn.RNNCell):
             prev_w_list = prev_state.ext_w_list
             prev_M = prev_state.ext_M
             prev_M = tf.reshape(prev_M, [-1, self.ext_memory_size, self.ext_memory_vector_dim])
+            memory_vector_dim = self.ext_memory_vector_dim
         
         w_list = []
         for i, head_parameter in enumerate(head_parameter_list):
-            k = tf.tanh(head_parameter[:, 0:self.ext_memory_vector_dim])
-            beta = tf.nn.softplus(head_parameter[:, self.ext_memory_vector_dim])
-            g = tf.sigmoid(head_parameter[:, self.ext_memory_vector_dim + 1])
+            k = tf.tanh(head_parameter[:, 0:memory_vector_dim])
+            beta = tf.nn.softplus(head_parameter[:, memory_vector_dim])
+            g = tf.sigmoid(head_parameter[:, memory_vector_dim + 1])
             s = tf.nn.softmax(
-                head_parameter[:, self.ext_memory_vector_dim + 2:self.ext_memory_vector_dim + 2 + (self.shift_range * 2 + 1)]
+                head_parameter[:, memory_vector_dim + 2:memory_vector_dim + 2 + (self.shift_range * 2 + 1)]
             )
             gamma = tf.nn.softplus(head_parameter[:, -1]) + 1
             with tf.variable_scope('addressing_head_%d' % i):
@@ -154,8 +155,8 @@ class NTMCell(tf.contrib.rnn.RNNCell):
         else:
             output_dim = self.output_dim
         with tf.variable_scope("o2o", reuse=(self.step > 0) or self.reuse):
-            read_vector_list = (prev_state.ext_read_vector_list if self.use_ext_memory else []) + \
-                (prev_state.att_read_vector_list if self.use_att_memory else [])
+            read_vector_list = (ext_read_vector_list if self.use_ext_memory else []) + \
+                (att_read_vector_list if self.use_att_memory else [])
 
             NTM_output = tf.contrib.layers.fully_connected(
                 tf.concat([controller_output] + read_vector_list, axis=1), output_dim, activation_fn=None,
@@ -199,15 +200,18 @@ class NTMCell(tf.contrib.rnn.RNNCell):
 
         k = tf.expand_dims(k, axis=2)
         inner_product = tf.matmul(prev_M, k)
-        k_norm = tf.sqrt(tf.reduce_sum(tf.square(k), axis=1, keep_dims=True))
-        M_norm = tf.sqrt(tf.reduce_sum(tf.square(prev_M), axis=2, keep_dims=True))
-        norm_product = M_norm * k_norm
-        K = tf.squeeze(inner_product / (norm_product + 1e-8))                   # eq (6)
+        # k_norm = tf.sqrt(tf.reduce_sum(tf.square(k), axis=1, keep_dims=True))
+        # M_norm = tf.sqrt(tf.reduce_sum(tf.square(prev_M), axis=2, keep_dims=True))
+        # norm_product = M_norm * k_norm
+        # K = tf.squeeze(inner_product / (norm_product + 1e-8))                   # eq (6)
 
-        # Calculating w^c
+        # # Calculating w^c
 
-        K_amplified = tf.exp(tf.expand_dims(beta, axis=1) * K)
-        w_c = K_amplified / tf.reduce_sum(K_amplified, axis=1, keep_dims=True)  # eq (5)
+        # K_amplified = tf.exp(tf.expand_dims(beta, axis=1) * K)
+        # w_c = K_amplified / tf.reduce_sum(K_amplified, axis=1, keep_dims=True)  # eq (5)
+
+        inner_product = tf.squeeze(inner_product, axis=2)
+        w_c = tf.nn.softmax(tf.expand_dims(beta, axis=1) * inner_product, dim=1)
 
         # w_c = tf.squeeze(w_c)
         if att:

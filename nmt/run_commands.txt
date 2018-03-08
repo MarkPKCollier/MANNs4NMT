@@ -27,21 +27,23 @@ python -m nmt.nmt \
     --read_heads=1 \
     --write_heads=1 \
     --num_memory_locations=64 \
-    --memory_unit_size=512
+    --memory_unit_size=50 \
+    --curriculum=none \
+    --num_curriculum_buckets=10
 
-gcloud ml-engine jobs submit training ntm_bi_enc_fixed_seq_len_beam_10_content_mix_context_vec_dropout_0_3_luong_style_2_read_heads_adam_2_512_3 \
+gcloud ml-engine jobs submit training en_vi_ntm_model2_no_curriculum_2_512_adam_32_mem_locations_mem_unit_size_100_0 \
     --module-name=nmt.nmt \
-    --package-path=/Users/markcollier/Documents/fourth_year_project/nmt/nmt \
+    --package-path=/Users/markcollier/Documents/MANNs4NMT/nmt \
     --region=us-central1 \
-    --job-dir=gs://mcolliertfnmt7/ntm_bi_enc_fixed_seq_len_beam_10_content_mix_context_vec_dropout_0_3_luong_style_2_read_heads_adam_2_512_3 \
+    --job-dir=gs://hbroderick1002/en_vi_ntm_model2_no_curriculum_2_512_adam_32_mem_locations_mem_unit_size_100_0 \
     --runtime-version=1.2 \
     --scale-tier=BASIC_GPU -- \
     --src=vi --tgt=en \
-    --out_dir=gs://mcolliertfnmt7/ntm_bi_enc_fixed_seq_len_beam_10_content_mix_context_vec_dropout_0_3_luong_style_2_read_heads_adam_2_512_3 \
-    --vocab_prefix=gs://mcolliertfnmt7/iwslt/vocab \
-    --train_prefix=gs://mcolliertfnmt7/iwslt/train \
-    --dev_prefix=gs://mcolliertfnmt7/iwslt/tst2012 \
-    --test_prefix=gs://mcolliertfnmt7/iwslt/tst2013 \
+    --out_dir=gs://hbroderick1002/en_vi_ntm_model2_no_curriculum_2_512_adam_32_mem_locations_mem_unit_size_100_0 \
+    --vocab_prefix=gs://hbroderick1002/iwslt/vocab \
+    --train_prefix=gs://hbroderick1002/iwslt/train \
+    --dev_prefix=gs://hbroderick1002/iwslt/tst2012 \
+    --test_prefix=gs://hbroderick1002/iwslt/tst2013 \
     --attention=scaled_luong \
     --num_train_steps=14000 \
     --steps_per_stats=100 \
@@ -56,47 +58,14 @@ gcloud ml-engine jobs submit training ntm_bi_enc_fixed_seq_len_beam_10_content_m
     --start_decay_step=20000 \
     --beam_width=10 \
     --share_vocab=False \
-    --use_ntm=True \
     --src_max_len=50 \
-    --src_max_len_infer=50
-
-gcloud ml-engine jobs submit training ref_model_bi_beam_10_sgd_scaled_luong_512_2 \
-    --module-name=nmt.nmt \
-    --package-path=/Users/markcollier/Documents/fourth_year_project/nmt/nmt \
-    --region=us-central1 \
-    --job-dir=gs://mcolliertfnmt3/ref_model_bi_beam_10_sgd_scaled_luong_512_2 \
-    --runtime-version=1.2 \
-    --scale-tier=BASIC_GPU -- \
-    --src=vi --tgt=en \
-    --out_dir=gs://mcolliertfnmt3/ref_model_bi_beam_10_sgd_scaled_luong_512_2 \
-    --vocab_prefix=gs://mcolliertfnmt3/iwslt/vocab \
-    --train_prefix=gs://mcolliertfnmt3/iwslt/train \
-    --dev_prefix=gs://mcolliertfnmt3/iwslt/tst2012 \
-    --test_prefix=gs://mcolliertfnmt3/iwslt/tst2013 \
-    --attention=scaled_luong \
-    --num_train_steps=14000 \
-    --steps_per_stats=100 \
-    --num_layers=2 \
-    --num_units=512 \
-    --dropout=0.2 \
-    --metrics=bleu \
-    --optimizer=sgd \
-    --learning_rate=1.0 \
-    --encoder_type=bi \
-    --decay_factor=0.5 \
-    --start_decay_step=8000 \
-    --beam_width=10 \
-    --share_vocab=False \
-    --src_max_len=50 \
-    --src_max_len_infer=50
-
-
-
-
-
-
-
-
-
-
+    --src_max_len_infer=50 \
+    --model=model2 \
+    --mann=ntm \
+    --read_heads=1 \
+    --write_heads=1 \
+    --num_memory_locations=32 \
+    --memory_unit_size=100 \
+    --curriculum=none \
+    --num_curriculum_buckets=10
 

@@ -36,6 +36,7 @@ import model as nmt_model
 import model_helper
 import misc_utils as utils
 import nmt_utils
+from exp3S import Exp3S
 
 utils.check_tensorflow_version()
 
@@ -237,20 +238,58 @@ def train(hparams, scope=None, target_session=""):
        time.ctime()),
       log_f)
 
+
+  # curriculum learning
+  if hparams.curriculum not in ('none', None, ''):
+    exp3s = Exp3S(hparams.num_curriculum_buckets, 0.001, 0, 0.05)
+
   # Initialize all of the iterators
   skip_count = hparams.batch_size * hparams.epoch_step
   utils.print_out("# Init train iterator, skipping %d elements" % skip_count)
   train_sess.run(
       train_model.iterator.initializer,
-      feed_dict={train_model.skip_count_placeholder: skip_count})
+      feed_dict={
+        train_model.skip_count_placeholder: skip_count,
+        train_model.curriculum_point_a_placeholder: 0,
+        train_model.curriculum_point_b_placeholder: hparams.src_max_len
+      })
 
   while global_step < num_train_steps:
     ### Run a step ###
     start_time = time.time()
     try:
-      step_result = loaded_train_model.train(train_sess)
-      (_, step_loss, step_predict_count, step_summary, global_step,
-       step_word_count, batch_size) = step_result
+      if hparams.curriculum != 'none':
+        lesson = exp3s.draw_task()
+        utils.print_out("curriculum_point_a: %s, curriculum_point_b: %s" % (train_model.curriculum_point_a_placeholder, train_model.curriculum_point_b_placeholder))
+        utils.print_out("curriculum_point_a: %s, curriculum_point_b: %s" % (lesson * (hparams.src_max_len // hparams.num_curriculum_buckets) + 1, (lesson + 1) * (hparams.src_max_len // hparams.num_curriculum_buckets) + 1))
+
+        curriculum_point_a = lesson * (hparams.src_max_len // hparams.num_curriculum_buckets) + 1
+        curriculum_point_b = (lesson + 1) * (hparams.src_max_len // hparams.num_curriculum_buckets) + 1
+
+        step_result = loaded_train_model.train(train_sess,
+          curriculum_point_a=curriculum_point_a,
+          a_placeholder=train_model.curriculum_point_a_placeholder,
+          curriculum_point_b=curriculum_point_b,
+          b_placeholder=train_model.curriculum_point_b_placeholder)
+
+        (_, step_loss, step_predict_count, step_summary, global_step,
+          step_word_count, batch_size, source_seq_len) = step_result
+
+        utils.print_out("step loss %s" % step_loss)
+        utils.print_out("evaluating train loss %s" % loaded_train_model.train_loss.eval(session=train_sess))
+
+        utils.print_out("step source_seq_len %s" % source_seq_len)
+        utils.print_out("evaluating source_sequence_length %s" % loaded_train_model.iterator.source_sequence_length.eval(session=train_sess))
+
+        # utils.print_out("step_loss: {0} - new_loss: {1}".format(step_loss, new_loss))
+
+        new_loss = 0
+        v = step_loss - new_loss
+        exp3s.update_w(v, float(curriculum_point_a + curriculum_point_b)/2.0)
+      else:
+        step_result = loaded_train_model.train(train_sess)
+        (_, step_loss, step_predict_count, step_summary, global_step,
+          step_word_count, batch_size) = step_result
       hparams.epoch_step += 1
     except tf.errors.OutOfRangeError:
       # Finished going through the training dataset.  Go to next epoch.
@@ -266,7 +305,11 @@ def train(hparams, scope=None, target_session=""):
           hparams, summary_writer)
       train_sess.run(
           train_model.iterator.initializer,
-          feed_dict={train_model.skip_count_placeholder: 0})
+          feed_dict={
+            train_model.skip_count_placeholder: 0,
+            train_model.curriculum_point_a_placeholder: 0,
+            train_model.curriculum_point_b_placeholder: hparams.src_max_len
+          })
       continue
 
     # Write step summary.

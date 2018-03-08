@@ -200,15 +200,32 @@ class BaseModel(object):
             num_partitions=hparams.num_embeddings_partitions,
             scope=scope,))
 
-  def train(self, sess):
+  def train(self, sess,
+    curriculum_point_a=None, a_placeholder=None,
+    curriculum_point_b=None, b_placeholder=None):
     assert self.mode == tf.contrib.learn.ModeKeys.TRAIN
-    return sess.run([self.update,
-                     self.train_loss,
-                     self.predict_count,
-                     self.train_summary,
-                     self.global_step,
-                     self.word_count,
-                     self.batch_size])
+    if curriculum_point_a != None:
+      utils.print_out("curriculum_point_a:  %s, a_placeholder: %s, curriculum_point_b: %s, b_placeholder: %s" % (curriculum_point_a, a_placeholder, curriculum_point_b, b_placeholder))
+      return sess.run([self.update,
+                       self.train_loss,
+                       self.predict_count,
+                       self.train_summary,
+                       self.global_step,
+                       self.word_count,
+                       self.batch_size,
+                       self.iterator.source_sequence_length],
+                       feed_dict={
+                        a_placeholder: curriculum_point_a,
+                        b_placeholder: curriculum_point_b
+                       })
+    else:
+      return sess.run([self.update,
+                       self.train_loss,
+                       self.predict_count,
+                       self.train_summary,
+                       self.global_step,
+                       self.word_count,
+                       self.batch_size])
 
   def eval(self, sess):
     assert self.mode == tf.contrib.learn.ModeKeys.EVAL
@@ -436,9 +453,9 @@ class BaseModel(object):
 
   def _compute_loss(self, logits):
     """Compute optimization loss."""
-    target_output = self.iterator.target_output
+    self.target_output = self.iterator.target_output
     if self.time_major:
-      target_output = tf.transpose(target_output)
+      target_output = tf.transpose(self.target_output)
     max_time = self.get_max_time(target_output)
     crossent = tf.nn.sparse_softmax_cross_entropy_with_logits(
         labels=target_output, logits=logits)
@@ -539,7 +556,6 @@ class Model(BaseModel):
             encoder_state.append(bi_encoder_state[0][layer_id])  # forward
             encoder_state.append(bi_encoder_state[1][layer_id])  # backward
           encoder_state = tuple(encoder_state)
-        print('encoder state', encoder_state)
       else:
         raise ValueError("Unknown encoder_type %s" % hparams.encoder_type)
     return encoder_outputs, encoder_state
