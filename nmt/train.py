@@ -246,13 +246,26 @@ def train(hparams, scope=None, target_session=""):
   # Initialize all of the iterators
   skip_count = hparams.batch_size * hparams.epoch_step
   utils.print_out("# Init train iterator, skipping %d elements" % skip_count)
-  train_sess.run(
-      train_model.iterator.initializer,
-      feed_dict={
-        train_model.skip_count_placeholder: skip_count,
-        train_model.curriculum_point_a_placeholder: 0,
-        train_model.curriculum_point_b_placeholder: hparams.src_max_len
-      })
+  if hparams.curriculum == 'none':
+    train_sess.run(
+        train_model.iterator.initializer,
+        feed_dict={
+          train_model.skip_count_placeholder: skip_count
+        })
+  else:
+    handle = train_model.iterator.handle
+    for i in range(hparams.num_curriculum_buckets):
+      train_sess.run(
+        train_model.iterator.initializer[i].initializer,
+        feed_dict={
+          train_model.skip_count_placeholder: skip_count
+        })
+
+    iterator_handles = [train_sess.run(train_model.iterator.initializer[i].string_handle(),
+        feed_dict={
+            train_model.skip_count_placeholder: skip_count
+          })
+      for i in range(hparams.num_curriculum_buckets)]
 
   while global_step < num_train_steps:
     ### Run a step ###
@@ -260,28 +273,28 @@ def train(hparams, scope=None, target_session=""):
     try:
       if hparams.curriculum != 'none':
         lesson = exp3s.draw_task()
-        utils.print_out("curriculum_point_a: %s, curriculum_point_b: %s" % (train_model.curriculum_point_a_placeholder, train_model.curriculum_point_b_placeholder))
-        utils.print_out("curriculum_point_a: %s, curriculum_point_b: %s" % (lesson * (hparams.src_max_len // hparams.num_curriculum_buckets) + 1, (lesson + 1) * (hparams.src_max_len // hparams.num_curriculum_buckets) + 1))
+        utils.print_out("lesson: %s" % (lesson,))
 
-        curriculum_point_a = lesson * (hparams.src_max_len // hparams.num_curriculum_buckets) + 1
-        curriculum_point_b = (lesson + 1) * (hparams.src_max_len // hparams.num_curriculum_buckets) + 1
-
-        step_result = loaded_train_model.train(train_sess,
-          curriculum_point_a=curriculum_point_a,
-          a_placeholder=train_model.curriculum_point_a_placeholder,
-          curriculum_point_b=curriculum_point_b,
-          b_placeholder=train_model.curriculum_point_b_placeholder)
+        step_result = loaded_train_model.train(train_sess, handle=handle, iterator_handle=iterator_handles[lesson])
 
         (_, step_loss, step_predict_count, step_summary, global_step,
           step_word_count, batch_size, source_seq_len) = step_result
 
-        utils.print_out("step loss %s" % step_loss)
-        utils.print_out("evaluating train loss %s" % loaded_train_model.train_loss.eval(session=train_sess))
+        # utils.print_out("step loss: %s, new_loss: %s" % (step_loss, new_loss))
+        # utils.print_out("step sample_id: %s, new_sample_id: %s" % (sample_id, new_sample_id))
+        # utils.print_out("evaluating train loss %s" % loaded_train_model.train_loss.eval(
+        #   session=train_sess,
+        #   feed_dict={handle: iterator_handles[lesson]}))
 
         utils.print_out("step source_seq_len %s" % source_seq_len)
-        utils.print_out("evaluating source_sequence_length %s" % loaded_train_model.iterator.source_sequence_length.eval(session=train_sess))
+        # utils.print_out("evaluating source_sequence_length %s" % loaded_train_model.iterator.source_sequence_length.eval(
+        #   session=train_sess,
+        #   feed_dict={handle: iterator_handles[lesson]}))
 
         # utils.print_out("step_loss: {0} - new_loss: {1}".format(step_loss, new_loss))
+
+        curriculum_point_a = lesson * (hparams.src_max_len // hparams.num_curriculum_buckets) + 1
+        curriculum_point_b = (lesson + 1) * (hparams.src_max_len // hparams.num_curriculum_buckets) + 1
 
         new_loss = 0
         v = step_loss - new_loss
@@ -294,22 +307,27 @@ def train(hparams, scope=None, target_session=""):
     except tf.errors.OutOfRangeError:
       # Finished going through the training dataset.  Go to next epoch.
       hparams.epoch_step = 0
-      utils.print_out(
-          "# Finished an epoch, step %d. Perform external evaluation" %
-          global_step)
-      run_sample_decode(infer_model, infer_sess,
-                        model_dir, hparams, summary_writer, sample_src_data,
-                        sample_tgt_data)
-      dev_scores, test_scores, _ = run_external_eval(
-          infer_model, infer_sess, model_dir,
-          hparams, summary_writer)
-      train_sess.run(
-          train_model.iterator.initializer,
-          feed_dict={
-            train_model.skip_count_placeholder: 0,
-            train_model.curriculum_point_a_placeholder: 0,
-            train_model.curriculum_point_b_placeholder: hparams.src_max_len
-          })
+      # utils.print_out(
+      #     "# Finished an epoch, step %d. Perform external evaluation" %
+      #     global_step)
+      # run_sample_decode(infer_model, infer_sess,
+      #                   model_dir, hparams, summary_writer, sample_src_data,
+      #                   sample_tgt_data)
+      # dev_scores, test_scores, _ = run_external_eval(
+      #     infer_model, infer_sess, model_dir,
+      #     hparams, summary_writer)
+      if hparams.curriculum == 'none':
+        train_sess.run(
+            train_model.iterator.initializer,
+            feed_dict={
+              train_model.skip_count_placeholder: 0
+            })
+      else:
+        train_sess.run(
+            train_model.iterator.initializer[lesson],
+            feed_dict={
+              train_model.skip_count_placeholder: 0
+            })
       continue
 
     # Write step summary.
@@ -337,6 +355,7 @@ def train(hparams, scope=None, target_session=""):
            loaded_train_model.learning_rate.eval(session=train_sess),
            avg_step_time, speed, train_ppl, _get_best_results(hparams)),
           log_f)
+      
       if math.isnan(train_ppl):
         break
 
@@ -389,6 +408,7 @@ def train(hparams, scope=None, target_session=""):
       eval_model, eval_sess, hparams,
       summary_writer, sample_src_data,
       sample_tgt_data)
+  
   utils.print_out(
       "# Final, step %d lr %g "
       "step-time %.2f wps %.2fK ppl %.2f, %s, %s" %

@@ -36,7 +36,7 @@ gcloud ml-engine jobs submit training en_vi_ntm_model2_no_curriculum_2_512_adam_
     --package-path=/Users/markcollier/Documents/MANNs4NMT/nmt \
     --region=us-central1 \
     --job-dir=gs://hbroderick1002/en_vi_ntm_model2_no_curriculum_2_512_adam_32_mem_locations_mem_unit_size_100_0 \
-    --runtime-version=1.2 \
+    --runtime-version=1.4 \
     --scale-tier=BASIC_GPU -- \
     --src=vi --tgt=en \
     --out_dir=gs://hbroderick1002/en_vi_ntm_model2_no_curriculum_2_512_adam_32_mem_locations_mem_unit_size_100_0 \

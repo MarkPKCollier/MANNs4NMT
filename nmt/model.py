@@ -164,6 +164,10 @@ class BaseModel(object):
       self.update = opt.apply_gradients(
           zip(clipped_gradients, params), global_step=self.global_step)
 
+      # if hparams.curriculum != 'none':
+      #   with tf.variable_scope('curriculum', reuse=tf.AUTO_REUSE):
+      #     _, self.new_loss, _, self.new_sample_id = self.build_graph(hparams, scope=scope)
+
       # Summary
       self.train_summary = tf.summary.merge([
           tf.summary.scalar("lr", self.learning_rate),
@@ -200,12 +204,9 @@ class BaseModel(object):
             num_partitions=hparams.num_embeddings_partitions,
             scope=scope,))
 
-  def train(self, sess,
-    curriculum_point_a=None, a_placeholder=None,
-    curriculum_point_b=None, b_placeholder=None):
+  def train(self, sess, handle=None, iterator_handle=None):
     assert self.mode == tf.contrib.learn.ModeKeys.TRAIN
-    if curriculum_point_a != None:
-      utils.print_out("curriculum_point_a:  %s, a_placeholder: %s, curriculum_point_b: %s, b_placeholder: %s" % (curriculum_point_a, a_placeholder, curriculum_point_b, b_placeholder))
+    if handle != None:
       return sess.run([self.update,
                        self.train_loss,
                        self.predict_count,
@@ -215,8 +216,7 @@ class BaseModel(object):
                        self.batch_size,
                        self.iterator.source_sequence_length],
                        feed_dict={
-                        a_placeholder: curriculum_point_a,
-                        b_placeholder: curriculum_point_b
+                        handle: iterator_handle
                        })
     else:
       return sess.run([self.update,
