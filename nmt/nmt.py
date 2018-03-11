@@ -49,6 +49,7 @@ def add_arguments(parser):
   parser.add_argument("--memory_unit_size", type=int, default=100, help="Units per memory location in external memory unit")
   parser.add_argument("--curriculum", type=str, default="none", help="none | predictive_gain")
   parser.add_argument("--num_curriculum_buckets", type=int, default=10, help="Number of lessons in the curriculum")
+  parser.add_argument("--curriculum_progress_loss", type=float, default=2.0)
 
   # network
   parser.add_argument("--num_units", type=int, default=32, help="Network size.")
@@ -263,6 +264,7 @@ def create_hparams(flags):
       memory_unit_size=flags.memory_unit_size,
       curriculum=flags.curriculum,
       num_curriculum_buckets=flags.num_curriculum_buckets,
+      curriculum_progress_loss=flags.curriculum_progress_loss,
 
       # Networks
       num_units=flags.num_units,

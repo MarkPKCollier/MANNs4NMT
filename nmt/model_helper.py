@@ -199,7 +199,7 @@ def create_infer_model(model_creator, hparams, scope=None, single_cell_fn=None):
     iterator = iterator_utils.get_infer_iterator(
         src_dataset,
         src_vocab_table,
-        batch_size=batch_size_placeholder,
+        batch_size=hparams.infer_batch_size,
         sos=hparams.sos,
         eos=hparams.eos,
         source_reverse=hparams.source_reverse,

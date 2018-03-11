@@ -36,6 +36,8 @@ import model as nmt_model
 import model_helper
 import misc_utils as utils
 import nmt_utils
+
+import numpy as np
 from exp3S import Exp3S
 
 utils.check_tensorflow_version()
@@ -238,14 +240,10 @@ def train(hparams, scope=None, target_session=""):
        time.ctime()),
       log_f)
 
-
-  # curriculum learning
-  if hparams.curriculum not in ('none', None, ''):
-    exp3s = Exp3S(hparams.num_curriculum_buckets, 0.001, 0, 0.05)
-
   # Initialize all of the iterators
   skip_count = hparams.batch_size * hparams.epoch_step
   utils.print_out("# Init train iterator, skipping %d elements" % skip_count)
+  
   if hparams.curriculum == 'none':
     train_sess.run(
         train_model.iterator.initializer,
@@ -253,6 +251,11 @@ def train(hparams, scope=None, target_session=""):
           train_model.skip_count_placeholder: skip_count
         })
   else:
+    if hparams.curriculum == 'predictive_gain':
+      exp3s = Exp3S(hparams.num_curriculum_buckets, 0.001, 0, 0.05)
+    elif hparams.curriculum == 'look_back_and_forward':
+      curriculum_point = 0
+
     handle = train_model.iterator.handle
     for i in range(hparams.num_curriculum_buckets):
       train_sess.run(
@@ -267,40 +270,53 @@ def train(hparams, scope=None, target_session=""):
           })
       for i in range(hparams.num_curriculum_buckets)]
 
+  utils.print_out("Starting training")
+
   while global_step < num_train_steps:
     ### Run a step ###
     start_time = time.time()
     try:
       if hparams.curriculum != 'none':
-        lesson = exp3s.draw_task()
-        utils.print_out("lesson: %s" % (lesson,))
+        if hparams.curriculum == 'predictive_gain':
+          lesson = exp3s.draw_task()
+        elif hparams.curriculum == 'look_back_and_forward':
+          if curriculum_point == hparams.num_curriculum_buckets:
+            lesson = np.random.randint(low=0, high=hparams.num_curriculum_buckets)
+          else:
+            lesson = curriculum_point if np.random.random_sample() < 0.8 else np.random.randint(low=0, high=hparams.num_curriculum_buckets)
 
-        step_result = loaded_train_model.train(train_sess, handle=handle, iterator_handle=iterator_handles[lesson])
+        step_result = loaded_train_model.train(hparams, train_sess,
+          handle=handle, iterator_handle=iterator_handles[lesson],
+          use_fed_source_placeholder=loaded_train_model.use_fed_source,
+          fed_source_placeholder=loaded_train_model.fed_source)
 
         (_, step_loss, step_predict_count, step_summary, global_step,
-          step_word_count, batch_size, source_seq_len) = step_result
+          step_word_count, batch_size, source) = step_result
 
-        # utils.print_out("step loss: %s, new_loss: %s" % (step_loss, new_loss))
-        # utils.print_out("step sample_id: %s, new_sample_id: %s" % (sample_id, new_sample_id))
-        # utils.print_out("evaluating train loss %s" % loaded_train_model.train_loss.eval(
-        #   session=train_sess,
-        #   feed_dict={handle: iterator_handles[lesson]}))
+        if hparams.curriculum == 'predictive_gain':
+          new_loss = loaded_train_model.train_loss.eval(
+            session=train_sess,
+            feed_dict={
+              handle: iterator_handles[lesson],
+              loaded_train_model.use_fed_source: True,
+              loaded_train_model.fed_source: source
+            })
 
-        utils.print_out("step source_seq_len %s" % source_seq_len)
-        # utils.print_out("evaluating source_sequence_length %s" % loaded_train_model.iterator.source_sequence_length.eval(
-        #   session=train_sess,
-        #   feed_dict={handle: iterator_handles[lesson]}))
+          utils.print_out("lesson: %s, step loss: %s, new_loss: %s" % (lesson, step_loss, new_loss))
 
-        # utils.print_out("step_loss: {0} - new_loss: {1}".format(step_loss, new_loss))
+          curriculum_point_a = lesson * (hparams.src_max_len // hparams.num_curriculum_buckets) + 1
+          curriculum_point_b = (lesson + 1) * (hparams.src_max_len // hparams.num_curriculum_buckets) + 1
 
-        curriculum_point_a = lesson * (hparams.src_max_len // hparams.num_curriculum_buckets) + 1
-        curriculum_point_b = (lesson + 1) * (hparams.src_max_len // hparams.num_curriculum_buckets) + 1
+          utils.print_out("exp3s dist: %s" % (exp3s.pi, ))
 
-        new_loss = 0
-        v = step_loss - new_loss
-        exp3s.update_w(v, float(curriculum_point_a + curriculum_point_b)/2.0)
+          v = step_loss - new_loss
+          exp3s.update_w(v, float(curriculum_point_a + curriculum_point_b)/2.0)
+        elif hparams.curriculum == 'look_back_and_forward':
+          utils.print_out("step loss: %s, lesson: %s" % (step_loss, lesson))
+          if step_loss < (hparams.curriculum_progress_loss * (1 + curriculum_point * (hparams.src_max_len // hparams.num_curriculum_buckets))):
+            curriculum_point += 1
       else:
-        step_result = loaded_train_model.train(train_sess)
+        step_result = loaded_train_model.train(hparams, train_sess)
         (_, step_loss, step_predict_count, step_summary, global_step,
           step_word_count, batch_size) = step_result
       hparams.epoch_step += 1
@@ -324,7 +340,7 @@ def train(hparams, scope=None, target_session=""):
             })
       else:
         train_sess.run(
-            train_model.iterator.initializer[lesson],
+            train_model.iterator.initializer[lesson].initializer,
             feed_dict={
               train_model.skip_count_placeholder: 0
             })
@@ -382,20 +398,24 @@ def train(hparams, scope=None, target_session=""):
       dev_ppl, test_ppl = run_internal_eval(
           eval_model, eval_sess, model_dir, hparams, summary_writer)
 
-    if global_step - last_external_eval_step >= steps_per_external_eval:
-      last_external_eval_step = global_step
-
-      # Save checkpoint
-      loaded_train_model.saver.save(
-          train_sess,
-          os.path.join(out_dir, "translate.ckpt"),
-          global_step=global_step)
-      run_sample_decode(infer_model, infer_sess,
-                        model_dir, hparams, summary_writer, sample_src_data,
-                        sample_tgt_data)
       dev_scores, test_scores, _ = run_external_eval(
           infer_model, infer_sess, model_dir,
           hparams, summary_writer)
+
+    # if global_step - last_external_eval_step >= steps_per_external_eval:
+    #   last_external_eval_step = global_step
+
+    #   # Save checkpoint
+    #   loaded_train_model.saver.save(
+    #       train_sess,
+    #       os.path.join(out_dir, "translate.ckpt"),
+    #       global_step=global_step)
+    #   run_sample_decode(infer_model, infer_sess,
+    #                     model_dir, hparams, summary_writer, sample_src_data,
+    #                     sample_tgt_data)
+    #   dev_scores, test_scores, _ = run_external_eval(
+    #       infer_model, infer_sess, model_dir,
+    #       hparams, summary_writer)
 
   # Done training
   loaded_train_model.saver.save(
@@ -462,12 +482,12 @@ def _sample_decode(model, global_step, sess, hparams, iterator, src_data,
                    tgt_data, iterator_src_placeholder,
                    iterator_batch_size_placeholder, summary_writer):
   """Pick a sentence and decode."""
-  decode_id = random.randint(0, len(src_data) - 1)
+  decode_id = random.randint(0, len(src_data) - hparams.infer_batch_size)
   utils.print_out("  # %d" % decode_id)
 
   iterator_feed_dict = {
-      iterator_src_placeholder: [src_data[decode_id]],
-      iterator_batch_size_placeholder: 1,
+      iterator_src_placeholder: src_data[decode_id:decode_id + hparams.infer_batch_size],
+      iterator_batch_size_placeholder: hparams.infer_batch_size,
   }
   sess.run(iterator.initializer, feed_dict=iterator_feed_dict)
 
@@ -476,6 +496,8 @@ def _sample_decode(model, global_step, sess, hparams, iterator, src_data,
   if hparams.beam_width > 0:
     # get the top translation.
     nmt_outputs = nmt_outputs[0]
+
+  nmt_outputs = np.asarray([nmt_outputs[decode_id % hparams.infer_batch_size]])
 
   translation = nmt_utils.get_translation(
       nmt_outputs,

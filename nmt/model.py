@@ -33,6 +33,8 @@ import model_helper
 import iterator_utils
 import misc_utils as utils
 import dense
+from ntm import NTMCell
+from dnc import DNC
 
 utils.check_tensorflow_version()
 
@@ -164,10 +166,6 @@ class BaseModel(object):
       self.update = opt.apply_gradients(
           zip(clipped_gradients, params), global_step=self.global_step)
 
-      # if hparams.curriculum != 'none':
-      #   with tf.variable_scope('curriculum', reuse=tf.AUTO_REUSE):
-      #     _, self.new_loss, _, self.new_sample_id = self.build_graph(hparams, scope=scope)
-
       # Summary
       self.train_summary = tf.summary.merge([
           tf.summary.scalar("lr", self.learning_rate),
@@ -204,7 +202,8 @@ class BaseModel(object):
             num_partitions=hparams.num_embeddings_partitions,
             scope=scope,))
 
-  def train(self, sess, handle=None, iterator_handle=None):
+  def train(self, hparams, sess, handle=None, iterator_handle=None,
+    use_fed_source_placeholder=None, fed_source_placeholder=None):
     assert self.mode == tf.contrib.learn.ModeKeys.TRAIN
     if handle != None:
       return sess.run([self.update,
@@ -214,9 +213,11 @@ class BaseModel(object):
                        self.global_step,
                        self.word_count,
                        self.batch_size,
-                       self.iterator.source_sequence_length],
+                       self.iterator.source],
                        feed_dict={
-                        handle: iterator_handle
+                        handle: iterator_handle,
+                        use_fed_source_placeholder: False,
+                        fed_source_placeholder: [[-1 for _ in range(hparams.src_max_len)]]
                        })
     else:
       return sess.run([self.update,
@@ -258,6 +259,10 @@ class BaseModel(object):
     num_layers = hparams.num_layers
     num_gpus = hparams.num_gpus
 
+    if self.mode == tf.contrib.learn.ModeKeys.TRAIN:
+      self.use_fed_source = tf.placeholder(tf.bool)
+      self.fed_source = tf.placeholder(tf.int32, shape=(None, hparams.src_max_len))
+
     with tf.variable_scope(scope or "dynamic_seq2seq", dtype=dtype):
       # Encoder
       encoder_outputs, encoder_state = self._build_encoder(hparams)
@@ -265,14 +270,14 @@ class BaseModel(object):
       ## Decoder
       logits, sample_id, final_context_state = self._build_decoder(encoder_outputs, encoder_state, hparams)
 
-      ## Loss
-      if self.mode != tf.contrib.learn.ModeKeys.INFER:
-        with tf.device(model_helper.get_device_str(num_layers - 1, num_gpus)):
-          loss = self._compute_loss(logits)
-      else:
-        loss = None
+    ## Loss
+    if self.mode != tf.contrib.learn.ModeKeys.INFER:
+      with tf.device(model_helper.get_device_str(num_layers - 1, num_gpus)):
+        loss = self._compute_loss(logits)
+    else:
+      loss = None
 
-      return logits, loss, final_context_state, sample_id
+    return logits, loss, final_context_state, sample_id
 
   @abc.abstractmethod
   def _build_encoder(self, hparams):
@@ -292,7 +297,29 @@ class BaseModel(object):
                           base_gpu=0):
     """Build a multi-layer RNN cell that can be used by encoder."""
 
-    return model_helper.create_rnn_cell(
+    if hparams.model == 'model3':
+      if hparams.mann == 'ntm':
+        return NTMCell(hparams.num_layers, hparams.num_units,
+          use_att_memory=False, att_memory=False, att_memory_size=None, att_memory_vector_dim=None,
+          use_ext_memory=True, ext_memory_size=hparams.num_memory_locations, ext_memory_vector_dim=hparams.memory_unit_size,
+          ext_read_head_num=hparams.read_heads, ext_write_head_num=hparams.write_heads,
+          dropout=hparams.dropout, batch_size=hparams.batch_size, mode=self.mode,
+          shift_range=1, output_dim=hparams.num_units, reuse=False)
+      elif hparams.mann == 'dnc':
+        access_config = {
+          'memory_size': hparams.num_memory_locations,
+          'word_size': hparams.memory_unit_size,
+          'num_reads': hparams.read_heads,
+          'num_writes': hparams.write_heads
+        }
+        controller_config = {
+          'num_units': hparams.num_units,
+          'num_layers': hparams.num_layers
+        }
+
+        return DNC(access_config, controller_config, hparams.num_units, 20, hparams.dropout, self.mode, hparams.batch_size)
+    else:
+      return model_helper.create_rnn_cell(
         unit_type=hparams.unit_type,
         num_units=hparams.num_units,
         num_layers=num_layers,
@@ -340,7 +367,16 @@ class BaseModel(object):
 
     ## Decoder.
     with tf.variable_scope("decoder") as decoder_scope:
-      cell, decoder_initial_state = self._build_decoder_cell(
+      if hparams.model == 'model3':
+          if self.mode == tf.contrib.learn.ModeKeys.INFER and hparams.beam_width > 0:
+            decoder_initial_state = tf.contrib.seq2seq.tile_batch(
+                encoder_state, multiplier=hparams.beam_width)
+          else:
+            decoder_initial_state = encoder_state
+          cell = self.encoder_cell
+
+      else:
+        cell, decoder_initial_state = self._build_decoder_cell(
           hparams, encoder_outputs, encoder_state,
           iterator.source_sequence_length)
 
@@ -391,6 +427,9 @@ class BaseModel(object):
         end_token = tgt_eos_id
 
         if beam_width > 0:
+          if hparams.model == 'model3':
+            cell.batch_size = cell.batch_size * beam_width
+
           my_decoder = tf.contrib.seq2seq.BeamSearchDecoder(
               cell=cell,
               embedding=self.embedding_decoder,
@@ -509,7 +548,14 @@ class Model(BaseModel):
 
     iterator = self.iterator
 
-    source = iterator.source
+    # source = iterator.source
+
+    if hparams.curriculum != 'none' and self.mode == tf.contrib.learn.ModeKeys.TRAIN:
+      source = tf.cond(self.use_fed_source, lambda: self.fed_source, lambda: iterator.source)
+      self.test_source = source
+    else:
+      source = iterator.source
+
     if self.time_major:
       source = tf.transpose(source)
 
@@ -520,14 +566,15 @@ class Model(BaseModel):
           self.embedding_encoder, source)
 
       # Encoder_outpus: [max_time, batch_size, num_units]
-      if hparams.encoder_type == "uni":
+      if hparams.encoder_type == "uni" or hparams.model == 'model3':
         utils.print_out("  num_layers = %d, num_residual_layers=%d" %
                         (num_layers, num_residual_layers))
-        cell = self._build_encoder_cell(
+
+        self.encoder_cell = self._build_encoder_cell(
             hparams, num_layers, num_residual_layers)
 
         encoder_outputs, encoder_state = tf.nn.dynamic_rnn(
-            cell,
+            self.encoder_cell,
             encoder_emb_inp,
             dtype=dtype,
             sequence_length=iterator.source_sequence_length,

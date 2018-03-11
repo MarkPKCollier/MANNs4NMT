@@ -16,6 +16,10 @@ Model2NTMState = namedtuple('Model2NTMState',
         'ext_read_vector_list', 'ext_w_list', 'ext_M',
         'att_read_vector_list', 'att_w_list', 'att_M'))
 
+Model3NTMState = namedtuple('Model2NTMState',
+        ('controller_state', 'prev_output',
+        'ext_read_vector_list', 'ext_w_list', 'ext_M'))
+
 class NTMCell(tf.contrib.rnn.RNNCell):
     def __init__(self, controller_layers, controller_units,
                 use_att_memory=True, att_memory=None, att_memory_size=None, att_memory_vector_dim=None,
@@ -73,7 +77,8 @@ class NTMCell(tf.contrib.rnn.RNNCell):
         num_parameters_per_head = (self.att_memory_vector_dim if att else self.ext_memory_vector_dim) + 1 + 1 + (self.shift_range * 2 + 1) + 1
         num_heads = 1 if att else (self.ext_read_head_num + self.ext_write_head_num)
         total_parameter_num = num_parameters_per_head if att else (num_parameters_per_head * num_heads + self.ext_memory_vector_dim * 2 * self.ext_write_head_num)
-        with tf.variable_scope("o2p_att_" + str(att), reuse=(self.step > 0) or self.reuse):
+        # with tf.variable_scope("o2p_att_" + str(att), reuse=(self.step > 0) or self.reuse):
+        with tf.variable_scope("o2p_att_" + str(att), reuse=tf.AUTO_REUSE):
             parameters = tf.contrib.layers.fully_connected(
                 controller_output, total_parameter_num, activation_fn=None,
                 weights_initializer=self.o2p_initializer)
@@ -132,8 +137,10 @@ class NTMCell(tf.contrib.rnn.RNNCell):
     def __call__(self, x, prev_state):
         if self.use_att_memory and self.use_ext_memory:
             prev_state = Model2NTMState(*prev_state)
-        else:
+        elif self.use_att_memory:
             prev_state = Model1NTMState(*prev_state)
+        else:
+            prev_state = Model3NTMState(*prev_state)
 
         prev_read_vector_list = (prev_state.ext_read_vector_list if self.use_ext_memory else []) + \
             (prev_state.att_read_vector_list if self.use_att_memory else [])
@@ -154,7 +161,7 @@ class NTMCell(tf.contrib.rnn.RNNCell):
             output_dim = x.get_shape()[1]
         else:
             output_dim = self.output_dim
-        with tf.variable_scope("o2o", reuse=(self.step > 0) or self.reuse):
+        with tf.variable_scope("o2o", reuse=tf.AUTO_REUSE):
             read_vector_list = (ext_read_vector_list if self.use_ext_memory else []) + \
                 (att_read_vector_list if self.use_att_memory else [])
 
@@ -168,13 +175,14 @@ class NTMCell(tf.contrib.rnn.RNNCell):
 
         self.step += 1
 
-        map(lambda v: v.set_shape([None, self.att_memory_vector_dim]), att_read_vector_list)
-        map(lambda v: v.set_shape([None, self.att_memory_size]), att_w_list)
-
-        if self.use_att_memory and self.use_ext_memory:
+        if self.use_att_memory:
+            map(lambda v: v.set_shape([None, self.att_memory_vector_dim]), att_read_vector_list)
+            map(lambda v: v.set_shape([None, self.att_memory_size]), att_w_list)
+        if self.use_ext_memory:
             map(lambda v: v.set_shape([None, self.ext_memory_vector_dim]), ext_read_vector_list)
             map(lambda v: v.set_shape([None, self.ext_memory_size]), ext_w_list)
 
+        if self.use_att_memory and self.use_ext_memory:
             return NTM_output, tuple(Model2NTMState(
                     controller_state=controller_state,
                     ext_read_vector_list=ext_read_vector_list,
@@ -184,12 +192,19 @@ class NTMCell(tf.contrib.rnn.RNNCell):
                     att_w_list=att_w_list,
                     att_M=att_M,
                     prev_output=NTM_output))
-        else:
+        elif self.use_att_memory:
             return NTM_output, tuple(Model1NTMState(
                     controller_state=controller_state,
                     att_read_vector_list=att_read_vector_list,
                     att_w_list=att_w_list,
                     att_M=att_M,
+                    prev_output=NTM_output))
+        else:
+            return NTM_output, tuple(Model3NTMState(
+                    controller_state=controller_state,
+                    ext_read_vector_list=ext_read_vector_list,
+                    ext_w_list=ext_w_list,
+                    ext_M=ext_M,
                     prev_output=NTM_output))
 
     def addressing(self, k, beta, g, s, gamma, prev_M, prev_w, att=True):
@@ -266,8 +281,9 @@ class NTMCell(tf.contrib.rnn.RNNCell):
 
                 ext_M = expand(tf.tanh(learned_init(self.ext_memory_size * self.ext_memory_vector_dim)), dim=0, N=batch_size, dims=1)
 
-            att_read_vector_list = [expand(tf.tanh(learned_init(self.att_memory_vector_dim)), dim=0, N=batch_size, dims=1)]
-            att_w_list = [expand(tf.nn.softmax(learned_init(self.att_memory_size)), dim=0, N=batch_size, dims=1)]
+            if self.use_att_memory:
+                att_read_vector_list = [expand(tf.tanh(learned_init(self.att_memory_vector_dim)), dim=0, N=batch_size, dims=1)]
+                att_w_list = [expand(tf.nn.softmax(learned_init(self.att_memory_size)), dim=0, N=batch_size, dims=1)]
 
             if self.use_att_memory and self.use_ext_memory:
                 return tuple(Model2NTMState(
@@ -279,12 +295,19 @@ class NTMCell(tf.contrib.rnn.RNNCell):
                     att_w_list=att_w_list,
                     att_M=self.att_M,
                     prev_output=prev_output))
-            else:
+            elif self.use_att_memory:
                 return tuple(Model1NTMState(
                     controller_state=controller_init_state,
                     att_read_vector_list=att_read_vector_list,
                     att_w_list=att_w_list,
                     att_M=self.att_M,
+                    prev_output=prev_output))
+            else:
+                return tuple(Model3NTMState(
+                    controller_state=controller_init_state,
+                    ext_read_vector_list=ext_read_vector_list,
+                    ext_w_list=ext_w_list,
+                    ext_M=ext_M,
                     prev_output=prev_output))
 
     @property
@@ -299,12 +322,19 @@ class NTMCell(tf.contrib.rnn.RNNCell):
                 att_w_list=[self.att_memory_size] if self.use_att_memory else None,
                 att_M=tf.TensorShape([self.att_memory_size * self.att_memory_vector_dim]) if self.use_att_memory else None,
                 prev_output=tf.TensorShape([self.output_dim])))
-        else:
+        elif self.use_att_memory:
             return tuple(Model1NTMState(
                 controller_state=self.controller.state_size,
                 att_read_vector_list=[self.att_memory_vector_dim] if self.use_att_memory else None,
                 att_w_list=[self.att_memory_size] if self.use_att_memory else None,
                 att_M=tf.TensorShape([self.att_memory_size * self.att_memory_vector_dim]) if self.use_att_memory else None,
+                prev_output=tf.TensorShape([self.output_dim])))
+        else:
+            return tuple(Model3NTMState(
+                controller_state=self.controller.state_size,
+                ext_read_vector_list=[self.ext_memory_vector_dim for _ in range(self.ext_read_head_num)] if self.use_ext_memory else None,
+                ext_w_list=[self.ext_memory_size for _ in range(self.ext_read_head_num + self.ext_write_head_num)] if self.use_ext_memory else None,
+                ext_M=tf.TensorShape([self.ext_memory_size * self.ext_memory_vector_dim]) if self.use_ext_memory else None,
                 prev_output=tf.TensorShape([self.output_dim])))
 
     @property

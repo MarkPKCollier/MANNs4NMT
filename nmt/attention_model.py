@@ -160,7 +160,7 @@ class AttentionModel(model.Model):
     return cell, decoder_initial_state
 
   def _get_infer_summary(self, hparams):
-    if hparams.beam_width > 0 or hparams.use_ntm:
+    if hparams.beam_width > 0 or hparams.model != 'none':
       return tf.no_op()
     return _create_attention_images_summary(self.final_context_state)
 

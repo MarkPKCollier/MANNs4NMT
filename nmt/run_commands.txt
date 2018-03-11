@@ -22,7 +22,7 @@ python -m nmt.nmt \
     --share_vocab=False \
     --src_max_len=50 \
     --src_max_len_infer=50 \
-    --model=model2 \
+    --model=model3 \
     --mann=ntm \
     --read_heads=1 \
     --write_heads=1 \
@@ -31,21 +31,21 @@ python -m nmt.nmt \
     --curriculum=none \
     --num_curriculum_buckets=10
 
-gcloud ml-engine jobs submit training en_vi_ntm_model2_no_curriculum_2_512_adam_32_mem_locations_mem_unit_size_100_0 \
+gcloud ml-engine jobs submit training en_vi_none_curriculum_model_2_ntm_num_memory_locations_64_memory_unit_size_512_2_read_write_0 \
     --module-name=nmt.nmt \
     --package-path=/Users/markcollier/Documents/MANNs4NMT/nmt \
     --region=us-central1 \
-    --job-dir=gs://hbroderick1002/en_vi_ntm_model2_no_curriculum_2_512_adam_32_mem_locations_mem_unit_size_100_0 \
-    --runtime-version=1.4 \
+    --job-dir=gs://hbroderick1002/en_vi_none_curriculum_model_2_ntm_num_memory_locations_64_memory_unit_size_512_2_read_write_0 \
+    --runtime-version=1.6 \
     --scale-tier=BASIC_GPU -- \
     --src=vi --tgt=en \
-    --out_dir=gs://hbroderick1002/en_vi_ntm_model2_no_curriculum_2_512_adam_32_mem_locations_mem_unit_size_100_0 \
+    --out_dir=gs://hbroderick1002/en_vi_none_curriculum_model_2_ntm_num_memory_locations_64_memory_unit_size_512_2_read_write_0 \
     --vocab_prefix=gs://hbroderick1002/iwslt/vocab \
     --train_prefix=gs://hbroderick1002/iwslt/train \
     --dev_prefix=gs://hbroderick1002/iwslt/tst2012 \
     --test_prefix=gs://hbroderick1002/iwslt/tst2013 \
     --attention=scaled_luong \
-    --num_train_steps=14000 \
+    --num_train_steps=16000 \
     --steps_per_stats=100 \
     --num_layers=2 \
     --num_units=512 \
@@ -62,10 +62,12 @@ gcloud ml-engine jobs submit training en_vi_ntm_model2_no_curriculum_2_512_adam_
     --src_max_len_infer=50 \
     --model=model2 \
     --mann=ntm \
-    --read_heads=1 \
-    --write_heads=1 \
-    --num_memory_locations=32 \
-    --memory_unit_size=100 \
+    --read_heads=2 \
+    --write_heads=2 \
+    --num_memory_locations=64 \
+    --memory_unit_size=512 \
     --curriculum=none \
-    --num_curriculum_buckets=10
+    --num_curriculum_buckets=10 \
+    --infer_batch_size=128 \
+    --batch_size=128
 

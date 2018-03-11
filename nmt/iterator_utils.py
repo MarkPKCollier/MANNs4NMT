@@ -52,21 +52,31 @@ def get_infer_iterator(
   # Add in the word counts.
   src_dataset = src_dataset.map(lambda src: (src, tf.size(src)))
 
-  def batching_func(x):
-    return x.padded_batch(
-        batch_size,
-        # The entry is the source line rows;
-        # this has unknown-length vectors.  The last entry is
-        # the source row size; this is a scalar.
-        padded_shapes=(tf.TensorShape([src_max_len]),  # src
-                       tf.TensorShape([])),     # src_len
-        # Pad the source sequences with eos tokens.
-        # (Though notice we don't generally need to do this since
-        # later on we will be masking out calculations past the true sequence.
-        padding_values=(src_eos_id,  # src
-                        0))          # src_len -- unused
+  # def batching_func(x):
+  #   return x.padded_batch(
+  #       batch_size,
+  #       # The entry is the source line rows;
+  #       # this has unknown-length vectors.  The last entry is
+  #       # the source row size; this is a scalar.
+  #       padded_shapes=(tf.TensorShape([src_max_len]),  # src
+  #                      tf.TensorShape([])),     # src_len
+  #       # Pad the source sequences with eos tokens.
+  #       # (Though notice we don't generally need to do this since
+  #       # later on we will be masking out calculations past the true sequence.
+  #       padding_values=(src_eos_id,  # src
+  #                       0))          # src_len -- unused
 
-  batched_dataset = batching_func(src_dataset)
+  # batched_dataset = batching_func(src_dataset)
+
+  batched_dataset = src_dataset.apply(tf.contrib.data.padded_batch_and_drop_remainder(
+      batch_size,
+      padded_shapes=(tf.TensorShape([src_max_len]),  # src
+        tf.TensorShape([])),     # src_len
+
+      padding_values=(src_eos_id,  # src
+        0))          # src_len -- unused
+    )
+
   batched_iter = batched_dataset.make_initializable_iterator()
   (src_ids, src_seq_len) = batched_iter.get_next()
   return BatchedInput(
@@ -171,24 +181,39 @@ def get_iterator(src_dataset,
       output_buffer_size=output_buffer_size)
   # Bucket by source sequence length (buckets for lengths 0-9, 10-19, ...)
   def batching_func(x):
-    return x.padded_batch(
-        batch_size,
-        # The first three entries are the source and target line rows;
-        # these have unknown-length vectors.  The last two entries are
-        # the source and target row sizes; these are scalars.
-        padded_shapes=(tf.TensorShape([src_max_len]),  # src
-                       tf.TensorShape([None]),  # tgt_input
-                       tf.TensorShape([None]),  # tgt_output
-                       tf.TensorShape([]),      # src_len
-                       tf.TensorShape([])),     # tgt_len
-        # Pad the source and target sequences with eos tokens.
-        # (Though notice we don't generally need to do this since
-        # later on we will be masking out calculations past the true sequence.
-        padding_values=(src_eos_id,  # src
-                        tgt_eos_id,  # tgt_input
-                        tgt_eos_id,  # tgt_output
-                        0,           # src_len -- unused
-                        0))          # tgt_len -- unused
+    return x.apply(tf.contrib.data.padded_batch_and_drop_remainder(
+      batch_size,
+      padded_shapes=(tf.TensorShape([src_max_len]),  # src
+       tf.TensorShape([None]),  # tgt_input
+       tf.TensorShape([None]),  # tgt_output
+       tf.TensorShape([]),      # src_len
+       tf.TensorShape([])),     # tgt_len
+
+      padding_values=(src_eos_id,  # src
+        tgt_eos_id,  # tgt_input
+        tgt_eos_id,  # tgt_output
+        0,           # src_len -- unused
+        0)
+      ))
+
+    # return x.padded_batch(
+    #     batch_size,
+    #     # The first three entries are the source and target line rows;
+    #     # these have unknown-length vectors.  The last two entries are
+    #     # the source and target row sizes; these are scalars.
+    #     padded_shapes=(tf.TensorShape([src_max_len]),  # src
+    #                    tf.TensorShape([None]),  # tgt_input
+    #                    tf.TensorShape([None]),  # tgt_output
+    #                    tf.TensorShape([]),      # src_len
+    #                    tf.TensorShape([])),     # tgt_len
+    #     # Pad the source and target sequences with eos tokens.
+    #     # (Though notice we don't generally need to do this since
+    #     # later on we will be masking out calculations past the true sequence.
+    #     padding_values=(src_eos_id,  # src
+    #                     tgt_eos_id,  # tgt_input
+    #                     tgt_eos_id,  # tgt_output
+    #                     0,           # src_len -- unused
+    #                     0))          # tgt_len -- unused
   if num_buckets > 1:
     def key_func(unused_1, unused_2, unused_3, src_len, tgt_len):
       # Calculate bucket_width by maximum source sequence length.
@@ -312,27 +337,43 @@ def get_feedable_iterator(hparams,
         num_threads=num_threads,
         output_buffer_size=output_buffer_size)
     # Bucket by source sequence length (buckets for lengths 0-9, 10-19, ...)
-    def batching_func(x):
-      return x.padded_batch(
-          batch_size,
-          # The first three entries are the source and target line rows;
-          # these have unknown-length vectors.  The last two entries are
-          # the source and target row sizes; these are scalars.
-          padded_shapes=(tf.TensorShape([src_max_len]),  # src
-                         tf.TensorShape([None]),  # tgt_input
-                         tf.TensorShape([None]),  # tgt_output
-                         tf.TensorShape([]),      # src_len
-                         tf.TensorShape([])),     # tgt_len
-          # Pad the source and target sequences with eos tokens.
-          # (Though notice we don't generally need to do this since
-          # later on we will be masking out calculations past the true sequence.
-          padding_values=(src_eos_id,  # src
-                          tgt_eos_id,  # tgt_input
-                          tgt_eos_id,  # tgt_output
-                          0,           # src_len -- unused
-                          0))          # tgt_len -- unused
+    # def batching_func(x):
+    #   return x.padded_batch(
+    #       batch_size,
+    #       # The first three entries are the source and target line rows;
+    #       # these have unknown-length vectors.  The last two entries are
+    #       # the source and target row sizes; these are scalars.
+    #       padded_shapes=(tf.TensorShape([src_max_len]),  # src
+    #                      tf.TensorShape([None]),  # tgt_input
+    #                      tf.TensorShape([None]),  # tgt_output
+    #                      tf.TensorShape([]),      # src_len
+    #                      tf.TensorShape([])),     # tgt_len
+    #       # Pad the source and target sequences with eos tokens.
+    #       # (Though notice we don't generally need to do this since
+    #       # later on we will be masking out calculations past the true sequence.
+    #       padding_values=(src_eos_id,  # src
+    #                       tgt_eos_id,  # tgt_input
+    #                       tgt_eos_id,  # tgt_output
+    #                       0,           # src_len -- unused
+    #                       0))          # tgt_len -- unused
     
-    batched_dataset = batching_func(src_tgt_dataset)
+    # batched_dataset = batching_func(src_tgt_dataset)
+
+    batched_dataset = src_tgt_dataset.apply(tf.contrib.data.padded_batch_and_drop_remainder(
+      batch_size,
+      padded_shapes=(tf.TensorShape([src_max_len]),  # src
+       tf.TensorShape([None]),  # tgt_input
+       tf.TensorShape([None]),  # tgt_output
+       tf.TensorShape([]),      # src_len
+       tf.TensorShape([])),     # tgt_len
+
+      padding_values=(src_eos_id,  # src
+        tgt_eos_id,  # tgt_input
+        tgt_eos_id,  # tgt_output
+        0,           # src_len -- unused
+        0)
+      ))
+
     return batched_dataset
 
   iterators = []
