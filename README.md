@@ -45,7 +45,7 @@ python -m nmt.nmt \
     --write_heads=1 \
     --num_memory_locations=64 \
     --memory_unit_size=50
-'''
+```
 
 ## Model 1 - Neural Turing Machine Style Attention
 
