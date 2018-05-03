@@ -33,7 +33,7 @@ import model_helper
 import iterator_utils
 import misc_utils as utils
 import dense
-from ntm import NTMCell
+from ntm import NTMCell, Model1NTMState, Model2NTMState, Model3NTMState
 from dnc import DNC
 
 utils.check_tensorflow_version()
@@ -93,12 +93,8 @@ class BaseModel(object):
     # Projection
     with tf.variable_scope(scope or "build_network"):
       with tf.variable_scope("decoder/output_projection"):
-        if hparams.num_proj is None:
-          self.output_layer = layers_core.Dense(
-              hparams.tgt_vocab_size, use_bias=False, name="output_projection")
-        else:
-          self.output_layer = dense.Dense([hparams.num_proj, hparams.tgt_vocab_size],
-            use_bias=False, name="output_projection")
+        self.output_layer = layers_core.Dense(
+          hparams.tgt_vocab_size, use_bias=False, name="output_projection")
 
     # To make it flexible for external code to add other cell types
     # If not specified, we will later use model_helper._single_cell
@@ -213,7 +209,7 @@ class BaseModel(object):
                        self.global_step,
                        self.word_count,
                        self.batch_size,
-                       self.iterator.source],
+                       self.source],
                        feed_dict={
                         handle: iterator_handle,
                         use_fed_source_placeholder: False,
@@ -270,6 +266,29 @@ class BaseModel(object):
       ## Decoder
       logits, sample_id, final_context_state = self._build_decoder(encoder_outputs, encoder_state, hparams)
 
+      if hparams.beam_width > 0 and self.mode == tf.contrib.learn.ModeKeys.INFER:
+        cell_state = final_context_state.cell_state
+      else:
+        cell_state = final_context_state
+
+      if hparams.mann == 'ntm':
+        if hparams.model in ('model0', 'model1'):
+          print('here', final_context_state)
+          final_state = Model1NTMState(*cell_state)
+        elif hparams.model == 'model2':
+          final_state = Model2NTMState(*cell_state)
+        else:
+          final_state = Model3NTMState(*cell_state)
+
+      self.att_w_history = tf.no_op()
+      self.ext_w_history = tf.no_op()
+      if hparams.record_w_history:
+        if hparams.mann == 'ntm' and hparams.model in ('model0', 'model1', 'model2', 'model3'):
+          att_w_history = final_state.att_w_history.stack()
+          self.att_w_history = tf.transpose(att_w_history, [1, 2, 0])
+        if hparams.mann == 'ntm' and hparams.model in ('model2', 'model3'):
+          self.ext_w_history = map(lambda hist: tf.transpose(hist.stack(), [1, 2, 0]), final_state.ext_w_history)
+
     ## Loss
     if self.mode != tf.contrib.learn.ModeKeys.INFER:
       with tf.device(model_helper.get_device_str(num_layers - 1, num_gpus)):
@@ -304,7 +323,8 @@ class BaseModel(object):
           use_ext_memory=True, ext_memory_size=hparams.num_memory_locations, ext_memory_vector_dim=hparams.memory_unit_size,
           ext_read_head_num=hparams.read_heads, ext_write_head_num=hparams.write_heads,
           dropout=hparams.dropout, batch_size=hparams.batch_size, mode=self.mode,
-          shift_range=1, output_dim=hparams.num_units, reuse=False)
+          shift_range=1, output_dim=hparams.num_units, reuse=False,
+          record_w_history=hparams.record_w_history)
       elif hparams.mann == 'dnc':
         access_config = {
           'memory_size': hparams.num_memory_locations,
@@ -369,6 +389,7 @@ class BaseModel(object):
     with tf.variable_scope("decoder") as decoder_scope:
       if hparams.model == 'model3':
           if self.mode == tf.contrib.learn.ModeKeys.INFER and hparams.beam_width > 0:
+            print('hello', encoder_state, self.encoder_cell, self.encoder_cell.state_size)
             decoder_initial_state = tf.contrib.seq2seq.tile_batch(
                 encoder_state, multiplier=hparams.beam_width)
           else:
@@ -513,7 +534,7 @@ class BaseModel(object):
   def infer(self, sess):
     assert self.mode == tf.contrib.learn.ModeKeys.INFER
     return sess.run([
-        self.infer_logits, self.infer_summary, self.sample_id, self.sample_words
+        self.infer_logits, self.att_w_history, self.ext_w_history, self.sample_id, self.sample_words
     ])
 
   def decode(self, sess):
@@ -526,12 +547,12 @@ class BaseModel(object):
       A tuple consiting of outputs, infer_summary.
         outputs: of size [batch_size, time]
     """
-    _, infer_summary, _, sample_words = self.infer(sess)
+    _, att_w_history, ext_w_history, _, sample_words = self.infer(sess)
 
     # make sure outputs is of shape [batch_size, time]
     if self.time_major:
       sample_words = sample_words.transpose()
-    return sample_words, infer_summary
+    return sample_words, att_w_history, ext_w_history
 
 
 class Model(BaseModel):
@@ -548,14 +569,12 @@ class Model(BaseModel):
 
     iterator = self.iterator
 
-    # source = iterator.source
-
     if hparams.curriculum != 'none' and self.mode == tf.contrib.learn.ModeKeys.TRAIN:
-      source = tf.cond(self.use_fed_source, lambda: self.fed_source, lambda: iterator.source)
-      self.test_source = source
+      self.source = tf.cond(self.use_fed_source, lambda: self.fed_source, lambda: iterator.source)
     else:
-      source = iterator.source
+      self.source = iterator.source
 
+    source = self.source
     if self.time_major:
       source = tf.transpose(source)
 

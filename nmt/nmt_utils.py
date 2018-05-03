@@ -51,7 +51,7 @@ def decode_and_evaluate(name,
 
       while True:
         try:
-          nmt_outputs, _ = model.decode(sess)
+          nmt_outputs, _, _ = model.decode(sess)
 
           if beam_width > 0:
             # get the top translation.

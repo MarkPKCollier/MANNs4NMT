@@ -37,7 +37,9 @@ import model_helper
 import misc_utils as utils
 import nmt_utils
 
+import pickle
 import numpy as np
+np.set_printoptions(threshold=np.nan)
 from exp3S import Exp3S
 
 utils.check_tensorflow_version()
@@ -294,26 +296,35 @@ def train(hparams, scope=None, target_session=""):
           step_word_count, batch_size, source) = step_result
 
         if hparams.curriculum == 'predictive_gain':
-          new_loss = loaded_train_model.train_loss.eval(
-            session=train_sess,
+          new_loss = train_sess.run([loaded_train_model.train_loss],
             feed_dict={
               handle: iterator_handles[lesson],
               loaded_train_model.use_fed_source: True,
               loaded_train_model.fed_source: source
             })
 
-          utils.print_out("lesson: %s, step loss: %s, new_loss: %s" % (lesson, step_loss, new_loss))
+          # new_loss = loaded_train_model.train_loss.eval(
+          #   session=train_sess,
+          #   feed_dict={
+          #     handle: iterator_handles[lesson],
+          #     loaded_train_model.use_fed_source: True,
+          #     loaded_train_model.fed_source: source
+          #   })
+
+          # utils.print_out("lesson: %s, step loss: %s, new_loss: %s" % (lesson, step_loss, new_loss))
+          # utils.print_out("exp3s dist: %s" % (exp3s.pi, ))
 
           curriculum_point_a = lesson * (hparams.src_max_len // hparams.num_curriculum_buckets) + 1
           curriculum_point_b = (lesson + 1) * (hparams.src_max_len // hparams.num_curriculum_buckets) + 1
-
-          utils.print_out("exp3s dist: %s" % (exp3s.pi, ))
 
           v = step_loss - new_loss
           exp3s.update_w(v, float(curriculum_point_a + curriculum_point_b)/2.0)
         elif hparams.curriculum == 'look_back_and_forward':
           utils.print_out("step loss: %s, lesson: %s" % (step_loss, lesson))
-          if step_loss < (hparams.curriculum_progress_loss * (1 + curriculum_point * (hparams.src_max_len // hparams.num_curriculum_buckets))):
+          curriculum_point_a = curriculum_point * (hparams.src_max_len // hparams.num_curriculum_buckets) + 1
+          curriculum_point_b = (curriculum_point + 1) * (hparams.src_max_len // hparams.num_curriculum_buckets) + 1
+
+          if step_loss < (hparams.curriculum_progress_loss * (float(curriculum_point_a + curriculum_point_b)/2.0)):
             curriculum_point += 1
       else:
         step_result = loaded_train_model.train(hparams, train_sess)
@@ -358,6 +369,10 @@ def train(hparams, scope=None, target_session=""):
 
     # Once in a while, we print statistics.
     if global_step - last_stats_step >= steps_per_stats:
+      if hparams.curriculum == 'predictive_gain':
+        utils.print_out("lesson: %s, step loss: %s, new_loss: %s" % (lesson, step_loss, new_loss))
+        utils.print_out("exp3s dist: %s" % (exp3s.pi, ))
+
       last_stats_step = global_step
 
       # Print statistics for the previous epoch.
@@ -482,37 +497,49 @@ def _sample_decode(model, global_step, sess, hparams, iterator, src_data,
                    tgt_data, iterator_src_placeholder,
                    iterator_batch_size_placeholder, summary_writer):
   """Pick a sentence and decode."""
-  decode_id = random.randint(0, len(src_data) - hparams.infer_batch_size)
-  utils.print_out("  # %d" % decode_id)
-
   iterator_feed_dict = {
-      iterator_src_placeholder: src_data[decode_id:decode_id + hparams.infer_batch_size],
+      iterator_src_placeholder: src_data[-hparams.infer_batch_size:],
       iterator_batch_size_placeholder: hparams.infer_batch_size,
   }
   sess.run(iterator.initializer, feed_dict=iterator_feed_dict)
 
-  nmt_outputs, attention_summary = model.decode(sess)
+  nmt_outputs, att_w_history, ext_w_history = model.decode(sess)
 
   if hparams.beam_width > 0:
     # get the top translation.
     nmt_outputs = nmt_outputs[0]
 
-  nmt_outputs = np.asarray([nmt_outputs[decode_id % hparams.infer_batch_size]])
+  nmt_outputs = np.asarray(nmt_outputs)
 
-  translation = nmt_utils.get_translation(
-      nmt_outputs,
-      sent_id=0,
-      tgt_sos=hparams.sos,
-      tgt_eos=hparams.eos,
-      bpe_delimiter=hparams.bpe_delimiter)
-  utils.print_out("    src: %s" % src_data[decode_id])
-  utils.print_out("    ref: %s" % tgt_data[decode_id])
-  utils.print_out(b"    nmt: %s" % translation)
+  outputs = []
+  for i in range(hparams.infer_batch_size):
+    tmp = {}
+    translation = nmt_utils.get_translation(
+        nmt_outputs,
+        sent_id=i,
+        tgt_sos=hparams.sos,
+        tgt_eos=hparams.eos,
+        bpe_delimiter=hparams.bpe_delimiter)
+    if i <= 5:
+      utils.print_out("    src: %s" % src_data[-hparams.infer_batch_size+i])
+      utils.print_out("    ref: %s" % tgt_data[-hparams.infer_batch_size+i])
+      utils.print_out(b"    nmt: %s" % translation)
+    tmp['src'] = src_data[-hparams.infer_batch_size+i]
+    tmp['ref'] = tgt_data[-hparams.infer_batch_size+i]
+    tmp['nmt'] = translation
+    if att_w_history is not None:
+      tmp['attention_head'] = att_w_history[-hparams.infer_batch_size+i]
+    if ext_w_history is not None:
+      for j, ext_head in enumerate(ext_w_history):
+        tmp['ext_head_{0}'.format(j)] = ext_head[-hparams.infer_batch_size+i]
+    outputs.append(tmp)
 
-  # Summary
-  if attention_summary is not None:
-    summary_writer.add_summary(attention_summary, global_step)
+  if hparams.record_w_history:
+    with open(hparams.out_dir + '/heads_step_{0}.pickle'.format(global_step), 'wb') as f:
+      if len(outputs) > 0:
+        pickle.dump(outputs, f)
 
+  # utils.print_out(pickle.dumps(outputs), f=hparams.out_dir + '/heads_step_{0}.pickle'.format(i))
 
 def _external_eval(model, global_step, sess, hparams, iterator,
                    iterator_feed_dict, tgt_file, label, summary_writer,

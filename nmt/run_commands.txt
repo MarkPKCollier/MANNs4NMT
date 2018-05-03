@@ -2,10 +2,10 @@ rm -rf /tmp/ref_model_en_vi_sgd_uni && mkdir /tmp/ref_model_en_vi_sgd_uni
 python -m nmt.nmt \
     --src=vi --tgt=en \
     --out_dir=/tmp/ref_model_en_vi_sgd_uni \
-    --vocab_prefix=/Users/markcollier/Desktop/iwslt/vocab \
-    --train_prefix=/Users/markcollier/Desktop/iwslt/train \
-    --dev_prefix=/Users/markcollier/Desktop/iwslt/tst2012 \
-    --test_prefix=/Users/markcollier/Desktop/iwslt/tst2013 \
+    --vocab_prefix=/path/to/datasets/iwslt/vocab \
+    --train_prefix=/path/to/datasets/iwslt/train \
+    --dev_prefix=/path/to/datasets/iwslt/tst2012 \
+    --test_prefix=/path/to/datasets/iwslt/tst2013 \
     --attention=scaled_luong \
     --num_train_steps=14000 \
     --steps_per_stats=100 \
@@ -31,19 +31,55 @@ python -m nmt.nmt \
     --curriculum=none \
     --num_curriculum_buckets=10
 
-gcloud ml-engine jobs submit training en_vi_none_curriculum_model_2_ntm_num_memory_locations_64_memory_unit_size_512_2_read_write_0 \
+rm -rf /tmp/en_ro && mkdir /tmp/en_ro
+python -m nmt.nmt \
+    --src=ro --tgt=en \
+    --out_dir=/tmp/en_ro \
+    --vocab_prefix=/path/to/datasets/iwslt_en_ro/vocab \
+    --train_prefix=/path/to/datasets/iwslt_en_ro/corpus.bpe \
+    --dev_prefix=/path/to/datasets/iwslt_en_ro/newsdev2016.bpe \
+    --test_prefix=/path/to/datasets/iwslt_en_ro/newstest2016.bpe \
+    --attention=scaled_luong \
+    --num_train_steps=73000 \
+    --steps_per_stats=400 \
+    --num_layers=2 \
+    --num_units=512 \
+    --dropout=0.3 \
+    --metrics=bleu \
+    --optimizer=adam \
+    --learning_rate=0.001 \
+    --encoder_type=bi \
+    --decay_steps=1000 \
+    --start_decay_step=80000 \
+    --beam_width=10 \
+    --share_vocab=False \
+    --src_max_len=50 \
+    --src_max_len_infer=50 \
+    --model=model3 \
+    --mann=ntm \
+    --read_heads=1 \
+    --write_heads=1 \
+    --num_memory_locations=64 \
+    --memory_unit_size=50 \
+    --curriculum=none \
+    --num_curriculum_buckets=10 \
+    --infer_batch_size=32 \
+    --batch_size=32 \
+    --bpe_delimiter=@@
+
+gcloud ml-engine jobs submit training en_vi_model_3_dnc_num_memory_locations_100_memory_unit_size_512_2_rw_5 \
     --module-name=nmt.nmt \
-    --package-path=/Users/markcollier/Documents/MANNs4NMT/nmt \
+    --package-path=/path/to/package/nmt \
     --region=us-central1 \
-    --job-dir=gs://hbroderick1002/en_vi_none_curriculum_model_2_ntm_num_memory_locations_64_memory_unit_size_512_2_read_write_0 \
+    --job-dir=gs://your_google_storage_bucket/en_vi_model_3_dnc_num_memory_locations_100_memory_unit_size_512_2_rw_5 \
     --runtime-version=1.6 \
     --scale-tier=BASIC_GPU -- \
     --src=vi --tgt=en \
-    --out_dir=gs://hbroderick1002/en_vi_none_curriculum_model_2_ntm_num_memory_locations_64_memory_unit_size_512_2_read_write_0 \
-    --vocab_prefix=gs://hbroderick1002/iwslt/vocab \
-    --train_prefix=gs://hbroderick1002/iwslt/train \
-    --dev_prefix=gs://hbroderick1002/iwslt/tst2012 \
-    --test_prefix=gs://hbroderick1002/iwslt/tst2013 \
+    --out_dir=gs://your_google_storage_bucket/en_vi_model_3_dnc_num_memory_locations_100_memory_unit_size_512_2_rw_5 \
+    --vocab_prefix=gs://your_google_storage_bucket/iwslt/vocab \
+    --train_prefix=gs://your_google_storage_bucket/iwslt/train \
+    --dev_prefix=gs://your_google_storage_bucket/iwslt/tst2012 \
+    --test_prefix=gs://your_google_storage_bucket/iwslt/tst2013 \
     --attention=scaled_luong \
     --num_train_steps=16000 \
     --steps_per_stats=100 \
@@ -60,14 +96,55 @@ gcloud ml-engine jobs submit training en_vi_none_curriculum_model_2_ntm_num_memo
     --share_vocab=False \
     --src_max_len=50 \
     --src_max_len_infer=50 \
-    --model=model2 \
-    --mann=ntm \
+    --model=model3 \
+    --mann=dnc \
     --read_heads=2 \
     --write_heads=2 \
-    --num_memory_locations=64 \
+    --num_memory_locations=100 \
     --memory_unit_size=512 \
     --curriculum=none \
     --num_curriculum_buckets=10 \
     --infer_batch_size=128 \
     --batch_size=128
+
+gcloud ml-engine jobs submit training en_ro_model_3_1_rw_head_dnc_num_memory_locations_128_memory_unit_size_512_1 \
+    --module-name=nmt.nmt \
+    --package-path=/path/to/package/nmt \
+    --region=us-east1 \
+    --job-dir=gs://your_google_storage_bucket/en_ro_model_3_1_rw_head_dnc_num_memory_locations_128_memory_unit_size_512_1 \
+    --runtime-version=1.6 \
+    --config config.yaml -- \
+    --src=ro --tgt=en \
+    --out_dir=gs://your_google_storage_bucket/en_ro_model_3_1_rw_head_dnc_num_memory_locations_128_memory_unit_size_512_1 \
+    --vocab_prefix=gs://your_google_storage_bucket/iwslt_en_ro/vocab \
+    --train_prefix=gs://your_google_storage_bucket/iwslt_en_ro/corpus.bpe \
+    --dev_prefix=gs://your_google_storage_bucket/iwslt_en_ro/newsdev2016.bpe \
+    --test_prefix=gs://your_google_storage_bucket/iwslt_en_ro/newstest2016.bpe \
+    --attention=scaled_luong \
+    --num_train_steps=120000 \
+    --steps_per_stats=400 \
+    --num_layers=2 \
+    --num_units=512 \
+    --dropout=0.3 \
+    --metrics=bleu \
+    --optimizer=adam \
+    --learning_rate=0.001 \
+    --encoder_type=bi \
+    --decay_steps=1000 \
+    --start_decay_step=180000 \
+    --beam_width=10 \
+    --share_vocab=False \
+    --src_max_len=50 \
+    --src_max_len_infer=50 \
+    --model=model3 \
+    --mann=dnc \
+    --read_heads=1 \
+    --write_heads=1 \
+    --num_memory_locations=128 \
+    --memory_unit_size=512 \
+    --curriculum=none \
+    --num_curriculum_buckets=10 \
+    --infer_batch_size=64 \
+    --batch_size=64 \
+    --bpe_delimiter=@@
 
