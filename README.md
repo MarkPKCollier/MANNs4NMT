@@ -5,9 +5,9 @@ This repository extends the [Tensorflow neural machine translation tutorial](htt
 We have trained Vietnamese to English and Romanian to English translation models for each of our novel architectures.
 
 - [Usage](#usage)
-- [Model 1 - Neural Turing Machine Style Attention](#Model-1-Neural-Turing-Machine-Style-Attention)
-- [Model 2 - Memory Augmented Decoder](#Model-2-Memory-Augmented-Decoder)
-- [Model 3 - Pure MANN](#Model-3-Pure-MANN)
+- [Model 1: Neural Turing Machine Style Attention](#model-1-neural-turing-machine-style-attention)
+- [Model 2: Memory Augmented Decoder](#model-2-memory-augmented-decoder)
+- [Model 3: Pure MANN](#model-3-pure-mann)
 
 ## Usage
 
@@ -47,17 +47,17 @@ python -m nmt.nmt \
     --memory_unit_size=50
 ```
 
-## Model 1 - Neural Turing Machine Style Attention
+## Model 1 Neural Turing Machine Style Attention
 
 We extend Luong attention with the ability to iterate from a Neural Turing Machine. We are motivated by the empirical observation that attention often monotonically iterates through the source sentence.
 
-## Model 2 - Memory Augmented Decoder
+## Model 2 Memory Augmented Decoder
 
 We add an external memory unit to the decoder of an attentional encoder-decoder. We are motivated by the successful addition of attention to the encoder-model architecture. We note that attention extends the memory capacity of the encoder, but the writable memory capacity of the decoder is still a fixed size vector. Our proposed model increases the writable memory capacity of the decoder.
 
 ![Model 2](/img/attentional_encoder_decoder_with_mann_decoder.png)
 
-## Model 3 - Pure MANN
+## Model 3 Pure MANN
 
 We evaluate the use of a MANN directly for machine translation. The MANN (either a NTM or DNC) receives as input the embedded source sentence, followed by an EOS marker, after which it must output the target sentence.
 
