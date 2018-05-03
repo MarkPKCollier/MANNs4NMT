@@ -9,6 +9,10 @@ We have trained Vietnamese to English and Romanian to English translation models
 - [Model 2: Memory Augmented Decoder](#model-2-memory-augmented-decoder)
 - [Model 3: Pure MANN](#model-3-pure-mann)
 
+Neural Turing Machine Style Attention and Memory Augmented Decoders are both extensions to the attentional encoder-decoder. We find that these extensions do not improve translation quality over the attentional encoder-decoder for the language pairs tested. The Pure MANN model is a departure from the attentional encoder-decoder. We find that the Pure MANN model performs equally to the attentional encoder-decoder for the Vietnamese to English task and ~2 BLEU worse than the attentional encoder-decoder on the Romanian to English task.
+
+Precise results to follow...
+
 ## Usage
 
 The following command will train a Vietnamese to English translation model using a Neural Turing Machine which recieves only the embedded source sentence as input.
